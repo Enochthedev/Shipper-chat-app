@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  password      String?   // For JWT auth, hashed
+  provider      String    @default("jwt") // "google" or "jwt"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  sessions1        ChatSession[] @relation("User1Sessions")
+  sessions2        ChatSession[] @relation("User2Sessions")
+  
+  @@index([email])
+}
+
+model ChatSession {
+  id        String    @id @default(cuid())
+  user1Id   String
+  user2Id   String
+  isAiChat  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  user1    User      @relation("User1Sessions", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2    User      @relation("User2Sessions", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages Message[]
+  
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+model Message {
+  id            String      @id @default(cuid())
+  content       String
+  senderId      String
+  recipientId   String
+  sessionId     String
+  isAiMessage   Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  
+  sender        User        @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient     User        @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  session       ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([createdAt])
+}

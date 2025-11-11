@@ -2,6 +2,37 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Prerequisites
+
+- Node.js 18+ installed
+- PostgreSQL database (local or remote)
+
+### Database Setup
+
+1. Install PostgreSQL locally or use a cloud provider (Railway, Supabase, etc.)
+
+2. Copy `.env.example` to `.env` and update the `DATABASE_URL`:
+```bash
+cp .env.example .env
+```
+
+3. Update the `DATABASE_URL` in `.env` with your PostgreSQL connection string:
+```
+DATABASE_URL="postgresql://username:password@localhost:5432/chat_app_mvp?schema=public"
+```
+
+4. Run Prisma migrations to create the database schema:
+```bash
+npx prisma migrate dev
+```
+
+5. (Optional) Generate Prisma Client if not already generated:
+```bash
+npx prisma generate
+```
+
+### Running the Development Server
+
 First, run the development server:
 
 ```bash
