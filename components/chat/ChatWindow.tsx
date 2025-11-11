@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, MoreVertical, Send, MessageSquare } from "lucide-react"
+import { Search, MoreVertical, Send, MessageSquare, ArrowLeft } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import { useSocket } from "@/lib/socket"
@@ -33,9 +33,10 @@ interface Message {
 interface ChatWindowProps {
   selectedUser: User | null
   onShowProfile: () => void
+  onBack: () => void
 }
 
-export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
+export function ChatWindow({ selectedUser, onShowProfile, onBack }: ChatWindowProps) {
   const { data: session } = useSession()
   const [message, setMessage] = useState("")
   const [messages, setMessages] = useState<Message[]>([])
@@ -389,17 +390,27 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
   return (
     <div className="flex flex-1 flex-col bg-white animate-fadeIn">
       {/* Chat Header */}
-      <div className="flex items-center justify-between border-b px-6 py-4 bg-white shadow-sm">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between border-b px-4 md:px-6 py-3 md:py-4 bg-white shadow-sm">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+          {/* Back button for mobile */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 md:hidden flex-shrink-0"
+            onClick={onBack}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          
           <Avatar 
-            className="h-11 w-11 cursor-pointer ring-2 ring-blue-100 hover:ring-blue-200 transition-all shadow-sm" 
+            className="h-10 w-10 md:h-11 md:w-11 cursor-pointer ring-2 ring-blue-100 hover:ring-blue-200 transition-all shadow-sm flex-shrink-0" 
             onClick={onShowProfile}
           >
             <AvatarImage src={getAvatarUrl(selectedUser)} />
             <AvatarFallback className="bg-gradient-to-br from-blue-400 to-purple-400" />
           </Avatar>
-          <div>
-            <h2 className="font-bold text-gray-900">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-bold text-gray-900 truncate text-sm md:text-base">
               {selectedUser.name || selectedUser.email}
             </h2>
             {onlineUserIds.has(selectedUser.id) ? (
@@ -413,7 +424,7 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-blue-50 hover:text-blue-600 transition-colors">
             <Search className="h-5 w-5" />
           </Button>
@@ -540,7 +551,7 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
       </ScrollArea>
 
       {/* Message Input */}
-      <div className="border-t px-6 py-4 bg-white shadow-lg">
+      <div className="border-t px-4 md:px-6 py-3 md:py-4 bg-white shadow-lg">
         {!isConnected && (
           <div className="mb-3 flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg animate-fadeIn">
             <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />

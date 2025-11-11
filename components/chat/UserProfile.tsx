@@ -27,9 +27,9 @@ export function UserProfile({ user, onClose }: UserProfileProps) {
   }
 
   return (
-    <div className="w-80 border-l bg-white">
+    <div className="w-full md:w-80 h-full md:h-auto border-l bg-white overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
         <h3 className="font-semibold">Profile</h3>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
           <X className="h-4 w-4" />
