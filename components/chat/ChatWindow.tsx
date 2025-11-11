@@ -43,6 +43,7 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set())
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { isConnected, on, off, emit } = useSocket()
 
@@ -60,7 +61,15 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
     if (!selectedUser || !session?.user?.id) {
       setMessages([])
       setSessionId(null)
+      setCurrentUserId(null)
       return
+    }
+
+    // Immediately clear messages when switching users to prevent flash
+    if (currentUserId !== selectedUser.id) {
+      setMessages([])
+      setSessionId(null)
+      setCurrentUserId(selectedUser.id)
     }
 
     async function loadChatSession() {
@@ -95,7 +104,11 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
         }
 
         const messagesData = await messagesResponse.json()
-        setMessages(messagesData.messages || [])
+        
+        // Only set messages if we're still on the same user (prevent race condition)
+        if (selectedUser.id === currentUserId) {
+          setMessages(messagesData.messages || [])
+        }
       } catch (err) {
         console.error("Error loading chat session:", err)
       } finally {
@@ -104,16 +117,17 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
     }
 
     loadChatSession()
-  }, [selectedUser, session])
+  }, [selectedUser, session, currentUserId])
 
   // Listen for incoming messages and online status via WebSocket
   useEffect(() => {
-    if (!session?.user?.id || !isConnected) {
+    if (!session?.user?.id || !isConnected || !sessionId) {
       return
     }
 
     const handleMessageReceive = (data: Message) => {
-      if (sessionId && data.sessionId === sessionId) {
+      // Only add message if it belongs to the current session
+      if (data.sessionId === sessionId) {
         setMessages((prev) => {
           // Avoid duplicates
           if (prev.some((msg) => msg.id === data.id)) {
@@ -163,6 +177,9 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
 
     const messageContent = message.trim()
     const tempId = `temp-${Date.now()}`
+    
+    // Check if selected user is AI bot
+    const isAIBot = selectedUser.provider === "ai" || selectedUser.email === "ai-assistant@chatapp.ai"
 
     // Optimistic UI update
     const optimisticMessage: Message = {
@@ -187,44 +204,94 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
     setSending(true)
 
     try {
-      if (!isConnected) {
-        throw new Error("Not connected to chat server")
+      if (isAIBot) {
+        // Handle AI chat via API
+        console.log('[ChatWindow] Sending message to AI...')
+        
+        const response = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: messageContent,
+            sessionId,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Failed to send message to AI")
+        }
+
+        const data = await response.json()
+        console.log('[ChatWindow] AI response received:', data)
+        
+        // Replace optimistic message with real user message
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === tempId ? { ...msg, id: data.userMessage.id } : msg))
+        )
+        
+        // Add AI response
+        const aiMessage: Message = {
+          id: data.aiMessage.id,
+          content: data.aiMessage.content,
+          senderId: data.aiMessage.senderId,
+          recipientId: session.user.id,
+          sessionId: data.sessionId,
+          createdAt: data.aiMessage.createdAt,
+          sender: data.aiMessage.sender,
+          recipient: {
+            id: session.user.id,
+            name: session.user.name || null,
+            email: session.user.email || "",
+            image: session.user.image || null,
+            provider: "jwt",
+          },
+        }
+        
+        setMessages((prev) => [...prev, aiMessage])
+      } else {
+        // Handle regular user chat via WebSocket
+        if (!isConnected) {
+          throw new Error("Not connected to chat server")
+        }
+
+        // Send message via WebSocket
+        emit("message:send", {
+          content: messageContent,
+          recipientId: selectedUser.id,
+          sessionId,
+        })
+
+        // Wait for acknowledgment
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("Message send timeout"))
+          }, 5000)
+
+          const handleSent = (data: Message) => {
+            clearTimeout(timeout)
+            // Replace optimistic message with real one
+            setMessages((prev) =>
+              prev.map((msg) => (msg.id === tempId ? data : msg))
+            )
+            off("message:sent", handleSent)
+            off("message:error", handleError)
+            resolve()
+          }
+
+          const handleError = (error: { message: string }) => {
+            clearTimeout(timeout)
+            off("message:sent", handleSent)
+            off("message:error", handleError)
+            reject(new Error(error.message))
+          }
+
+          on("message:sent", handleSent)
+          on("message:error", handleError)
+        })
       }
-
-      // Send message via WebSocket
-      emit("message:send", {
-        content: messageContent,
-        recipientId: selectedUser.id,
-        sessionId,
-      })
-
-      // Wait for acknowledgment
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Message send timeout"))
-        }, 5000)
-
-        const handleSent = (data: Message) => {
-          clearTimeout(timeout)
-          // Replace optimistic message with real one
-          setMessages((prev) =>
-            prev.map((msg) => (msg.id === tempId ? data : msg))
-          )
-          off("message:sent", handleSent)
-          off("message:error", handleError)
-          resolve()
-        }
-
-        const handleError = (error: { message: string }) => {
-          clearTimeout(timeout)
-          off("message:sent", handleSent)
-          off("message:error", handleError)
-          reject(new Error(error.message))
-        }
-
-        on("message:sent", handleSent)
-        on("message:error", handleError)
-      })
     } catch (err) {
       console.error("Error sending message:", err)
       // Remove failed message
