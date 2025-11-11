@@ -42,6 +42,7 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [aiTyping, setAiTyping] = useState(false)
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set())
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -208,6 +209,9 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
         // Handle AI chat via API
         console.log('[ChatWindow] Sending message to AI...')
         
+        // Show AI typing indicator
+        setAiTyping(true)
+        
         const response = await fetch("/api/ai/chat", {
           method: "POST",
           headers: {
@@ -226,6 +230,9 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
 
         const data = await response.json()
         console.log('[ChatWindow] AI response received:', data)
+        
+        // Hide AI typing indicator
+        setAiTyping(false)
         
         // Replace optimistic message with real user message
         setMessages((prev) =>
@@ -294,6 +301,8 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
       }
     } catch (err) {
       console.error("Error sending message:", err)
+      // Hide AI typing indicator
+      setAiTyping(false)
       // Remove failed message
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId))
       setMessage(messageContent) // Restore message
@@ -476,6 +485,24 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
                 </div>
               )
             })}
+            
+            {/* AI Typing Indicator */}
+            {aiTyping && (
+              <div className="flex items-start gap-3 animate-fadeIn">
+                <Avatar className="h-8 w-8 flex-shrink-0">
+                  <AvatarImage src={getAvatarUrl(selectedUser)} />
+                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400" />
+                </Avatar>
+                <div className="rounded-2xl rounded-tl-sm bg-gray-100 px-4 py-3 inline-block">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div ref={messagesEndRef} />
           </div>
         )}
