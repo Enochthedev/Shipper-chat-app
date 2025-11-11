@@ -43,9 +43,11 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [aiTyping, setAiTyping] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set())
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const { isConnected, on, off, emit } = useSocket()
 
   // Auto-scroll to bottom
@@ -136,6 +138,20 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
           }
           return [...prev, data]
         })
+        // Stop typing indicator when message is received
+        setIsTyping(false)
+      }
+    }
+
+    const handleTypingStart = (data: { userId: string; sessionId: string }) => {
+      if (data.sessionId === sessionId && data.userId === selectedUser?.id) {
+        setIsTyping(true)
+      }
+    }
+
+    const handleTypingStop = (data: { userId: string; sessionId: string }) => {
+      if (data.sessionId === sessionId && data.userId === selectedUser?.id) {
+        setIsTyping(false)
       }
     }
 
@@ -156,6 +172,8 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
     }
 
     on("message:receive", handleMessageReceive)
+    on("typing:start", handleTypingStart)
+    on("typing:stop", handleTypingStop)
     on("users:online", handleUsersOnline)
     on("user:online", handleUserOnline)
     on("user:offline", handleUserOffline)
@@ -163,11 +181,13 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
 
     return () => {
       off("message:receive", handleMessageReceive)
+      off("typing:start", handleTypingStart)
+      off("typing:stop", handleTypingStop)
       off("users:online", handleUsersOnline)
       off("user:online", handleUserOnline)
       off("user:offline", handleUserOffline)
     }
-  }, [session, sessionId, isConnected, on, off, emit])
+  }, [session, sessionId, isConnected, on, off, emit, selectedUser])
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -181,6 +201,17 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
     
     // Check if selected user is AI bot
     const isAIBot = selectedUser.provider === "ai" || selectedUser.email === "ai-assistant@chatapp.ai"
+    
+    // Clear typing timeout and emit typing stop for regular users
+    if (!isAIBot && isConnected) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+      emit("typing:stop", {
+        recipientId: selectedUser.id,
+        sessionId,
+      })
+    }
 
     // Optimistic UI update
     const optimisticMessage: Message = {
@@ -486,8 +517,8 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
               )
             })}
             
-            {/* AI Typing Indicator */}
-            {aiTyping && (
+            {/* Typing Indicator (AI or Regular User) */}
+            {(aiTyping || isTyping) && (
               <div className="flex items-start gap-3 animate-fadeIn">
                 <Avatar className="h-8 w-8 flex-shrink-0">
                   <AvatarImage src={getAvatarUrl(selectedUser)} />
@@ -521,7 +552,41 @@ export function ChatWindow({ selectedUser, onShowProfile }: ChatWindowProps) {
             <Input
               placeholder={isConnected ? "Type a message..." : "Connecting..."}
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value
+                setMessage(value)
+                
+                // Emit typing events for regular users (not AI)
+                const isAIBot = selectedUser?.provider === "ai" || selectedUser?.email === "ai-assistant@chatapp.ai"
+                if (!isAIBot && isConnected && sessionId && selectedUser) {
+                  if (value.trim()) {
+                    // Emit typing start
+                    emit("typing:start", {
+                      recipientId: selectedUser.id,
+                      sessionId,
+                    })
+                    
+                    // Clear existing timeout
+                    if (typingTimeoutRef.current) {
+                      clearTimeout(typingTimeoutRef.current)
+                    }
+                    
+                    // Set timeout to emit typing stop after 2 seconds of inactivity
+                    typingTimeoutRef.current = setTimeout(() => {
+                      emit("typing:stop", {
+                        recipientId: selectedUser.id,
+                        sessionId,
+                      })
+                    }, 2000)
+                  } else {
+                    // Emit typing stop if input is empty
+                    emit("typing:stop", {
+                      recipientId: selectedUser.id,
+                      sessionId,
+                    })
+                  }
+                }
+              }}
               className="pr-12 bg-gray-50 border-gray-200 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all rounded-xl"
               disabled={sending || loading || !isConnected}
               onKeyDown={(e) => {
