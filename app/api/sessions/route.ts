@@ -55,25 +55,16 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Transform sessions to include last message and unread count
-    const transformedSessions = await Promise.all(
-      chatSessions.map(async (session) => {
-        // Count unread messages (messages sent to current user that haven't been read)
-        const unreadCount = await prisma.message.count({
-          where: {
-            sessionId: session.id,
-            recipientId: userId,
-            read: false,
-          },
-        })
-
-        return {
-          ...session,
-          lastMessage: session.messages[0] || null,
-          unreadCount,
-        }
-      })
-    )
+    // Transform sessions to include last message
+    // Note: Unread count feature requires a 'read' field in Message model
+    // For now, we'll set unreadCount to 0
+    const transformedSessions = chatSessions.map((session) => {
+      return {
+        ...session,
+        lastMessage: session.messages[0] || null,
+        unreadCount: 0, // TODO: Add 'read' field to Message model for unread counts
+      }
+    })
 
     return NextResponse.json(transformedSessions)
   } catch (error) {

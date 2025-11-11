@@ -22,25 +22,38 @@ async function sendToHuggingFace(
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
 ): Promise<string> {
   try {
-    // Try using the conversational endpoint with a free model
-    // facebook/blenderbot-400M-distill is a good free conversational model
-    const response = await hf.conversational({
-      model: 'facebook/blenderbot-400M-distill',
-      inputs: {
-        text: message,
-        past_user_inputs: conversationHistory
-          ?.filter(m => m.role === 'user')
-          .map(m => m.content)
-          .slice(-3) || [],
-        generated_responses: conversationHistory
-          ?.filter(m => m.role === 'assistant')
-          .map(m => m.content)
-          .slice(-3) || [],
+    // Build conversation context
+    let prompt = '';
+    
+    if (conversationHistory && conversationHistory.length > 0) {
+      // Include recent conversation history (last 3 exchanges)
+      const recentHistory = conversationHistory.slice(-6); // 3 user + 3 assistant
+      for (const msg of recentHistory) {
+        prompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`;
+      }
+    }
+    
+    prompt += `User: ${message}\nAssistant:`;
+    
+    // Use text generation with a free model
+    const response = await hf.textGeneration({
+      model: 'gpt2',
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: 100,
+        temperature: 0.8,
+        top_p: 0.95,
+        repetition_penalty: 1.2,
+        return_full_text: false,
       },
     });
     
-    // Extract the response
-    const aiResponse = response.generated_text?.trim();
+    // Extract and clean the response
+    let aiResponse = response.generated_text?.trim() || '';
+    
+    // Remove any "User:" or "Assistant:" prefixes that might appear
+    aiResponse = aiResponse.split('\n')[0]; // Take only first line
+    aiResponse = aiResponse.replace(/^(User:|Assistant:)\s*/i, '');
     
     // If response is empty or too short, use fallback
     if (!aiResponse || aiResponse.length < 2) {
@@ -205,7 +218,20 @@ export async function sendMessageToAI(
       }, AI_TIMEOUT);
     });
 
-    // Try Hugging Face first if API key is available
+    // Try OpenAI first if available (most reliable)
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const response = await Promise.race([
+          sendToOpenAI(message, conversationHistory),
+          timeoutPromise,
+        ]);
+        return response;
+      } catch (openaiError) {
+        console.warn('OpenAI API failed, using fallback:', openaiError);
+      }
+    }
+
+    // Try Hugging Face if API key is available
     if (process.env.HUGGINGFACE_API_KEY) {
       try {
         const response = await Promise.race([
@@ -214,44 +240,23 @@ export async function sendMessageToAI(
         ]);
         return response;
       } catch (hfError) {
-        console.warn('Hugging Face API failed, trying OpenAI fallback:', hfError);
-        
-        // If Hugging Face fails and OpenAI is available, try OpenAI
-        if (process.env.OPENAI_API_KEY) {
-          const response = await Promise.race([
-            sendToOpenAI(message, conversationHistory),
-            timeoutPromise,
-          ]);
-          return response;
-        }
-        
-        throw hfError;
+        console.warn('Hugging Face API failed, using pattern-based fallback:', hfError);
       }
     }
-    
-    // If no Hugging Face key, try OpenAI
-    if (process.env.OPENAI_API_KEY) {
-      const response = await Promise.race([
-        sendToOpenAI(message, conversationHistory),
-        timeoutPromise,
-      ]);
-      return response;
-    }
 
-    throw new Error('No AI service configured');
+    // Fall back to pattern-based responses (always works)
+    console.log('Using pattern-based AI responses');
+    return getPatternBasedResponse(message);
   } catch (error) {
     // Handle specific error types
     if (error instanceof Error) {
       if (error.message.includes('timeout')) {
-        throw new Error('AI response timeout. Please try again.');
+        return getPatternBasedResponse(message);
       }
-      if (error.message.includes('API key') || error.message.includes('configured')) {
-        throw new Error('AI service is not configured properly.');
-      }
-      throw new Error(`AI service error: ${error.message}`);
     }
     
-    throw new Error('AI service is temporarily unavailable. Please try again later.');
+    // Always fall back to pattern-based responses
+    return getPatternBasedResponse(message);
   }
 }
 
