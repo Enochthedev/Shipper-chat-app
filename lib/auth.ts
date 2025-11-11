@@ -1,27 +1,15 @@
-import NextAuth, { NextAuthOptions } from "next-auth"
+import NextAuth from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
-import { PrismaAdapter } from "@auth/prisma-adapter"
 import { prisma } from "@/lib/prisma"
 import bcrypt from "bcryptjs"
-import { Adapter } from "next-auth/adapters"
 
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as Adapter,
+export const authOptions = {
   trustHost: true,
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-      profile(profile) {
-        return {
-          id: profile.sub,
-          email: profile.email,
-          name: profile.name,
-          image: profile.picture,
-          provider: "google",
-        }
-      },
     }),
     CredentialsProvider({
       name: "credentials",
@@ -31,7 +19,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password required")
+          return null
         }
 
         const user = await prisma.user.findUnique({
@@ -39,7 +27,7 @@ export const authOptions: NextAuthOptions = {
         })
 
         if (!user || !user.password) {
-          throw new Error("Invalid credentials")
+          return null
         }
 
         const isPasswordValid = await bcrypt.compare(
@@ -48,7 +36,7 @@ export const authOptions: NextAuthOptions = {
         )
 
         if (!isPasswordValid) {
-          throw new Error("Invalid credentials")
+          return null
         }
 
         return {
@@ -61,57 +49,63 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   session: {
-    strategy: "jwt",
+    strategy: "jwt" as const,
   },
   pages: {
     signIn: "/auth/login",
   },
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account }: any) {
       if (user) {
         token.id = user.id
         token.provider = account?.provider || "credentials"
       }
       return token
     },
-    async session({ session, token }) {
+    async session({ session, token }: any) {
       if (session.user) {
         session.user.id = token.id as string
         session.user.provider = token.provider as string
       }
       return session
     },
-    async signIn({ user, account }) {
-      // Ensure user exists in database for all providers
-      const existingUser = await prisma.user.findUnique({
-        where: { email: user.email! },
-      })
-
-      if (!existingUser) {
-        // This shouldn't happen for credentials provider since authorize checks it
-        // But for Google, we need to create the user
+    async signIn({ user, account }: any) {
+      try {
         if (account?.provider === "google") {
-          // Generate DiceBear avatar if no image provided
-          const avatarUrl = user.image || `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${encodeURIComponent(user.email!)}`
-          
-          await prisma.user.create({
-            data: {
-              id: user.id, // Use the ID from the auth provider
-              email: user.email!,
-              name: user.name,
-              image: avatarUrl,
-              provider: "google",
-            },
+          // Check if user exists in our database
+          let existingUser = await prisma.user.findUnique({
+            where: { email: user.email },
           })
+
+          if (!existingUser) {
+            // Create new user in our database
+            existingUser = await prisma.user.create({
+              data: {
+                email: user.email,
+                name: user.name || null,
+                image: user.image || null,
+                provider: "google",
+              },
+            })
+          } else if (existingUser.provider !== "google") {
+            // Update provider if user exists with different provider
+            await prisma.user.update({
+              where: { email: user.email },
+              data: { 
+                provider: "google",
+                name: user.name || existingUser.name,
+                image: user.image || existingUser.image,
+              },
+            })
+          }
+          // Set the user ID to match our database
+          user.id = existingUser.id
         }
-      } else if (account?.provider === "google" && existingUser.provider !== "google") {
-        // Update provider if user exists with different provider
-        await prisma.user.update({
-          where: { email: user.email! },
-          data: { provider: "google" },
-        })
+        return true
+      } catch (error) {
+        console.error("SignIn callback error:", error)
+        return false
       }
-      return true
     },
   },
 }
