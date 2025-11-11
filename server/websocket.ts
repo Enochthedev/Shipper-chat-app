@@ -310,10 +310,12 @@ io.on("connection", (socket) => {
 })
 
 // Start server
-const PORT = process.env.WS_PORT || 3001
+// Railway provides PORT, fallback to WS_PORT for local dev
+const PORT = process.env.PORT || process.env.WS_PORT || 3001
 
 httpServer.listen(PORT, () => {
   console.log(`WebSocket server running on port ${PORT}`)
+  console.log(`Health check available at http://localhost:${PORT}/health`)
 })
 
 // Graceful shutdown
