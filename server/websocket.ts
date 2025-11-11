@@ -8,8 +8,24 @@ const prisma = new PrismaClient()
 // Track online users: Map<userId, socketId>
 const onlineUsers = new Map<string, string>()
 
-// Create HTTP server
-const httpServer = createServer()
+// Create HTTP server with health check endpoint
+const httpServer = createServer((req, res) => {
+  // Health check endpoint for Railway
+  if (req.url === "/" || req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" })
+    res.end(JSON.stringify({ 
+      status: "ok", 
+      service: "websocket-server",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    }))
+    return
+  }
+  
+  // Default response for other routes
+  res.writeHead(404, { "Content-Type": "application/json" })
+  res.end(JSON.stringify({ error: "Not found" }))
+})
 
 // Create Socket.io server with CORS configuration
 const allowedOrigins = [
