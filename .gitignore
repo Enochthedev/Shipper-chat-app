@@ -41,5 +41,9 @@ next-env.d.ts
 # Kiro IDE
 .kiro/
 
-# Deployment documentation (keep private)
+# Deployment documentation (keep private - may contain credentials)
 DEPLOYMENT.md
+*DEPLOYMENT*.md
+*RAILWAY*.md
+*WS_*.md
+MOBILE_RESPONSIVE.md
