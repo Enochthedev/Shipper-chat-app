@@ -12,9 +12,39 @@ const onlineUsers = new Map<string, string>()
 const httpServer = createServer()
 
 // Create Socket.io server with CORS configuration
+const allowedOrigins = [
+  process.env.NEXTAUTH_URL || "http://localhost:3000",
+  "http://localhost:3000",
+  "https://*.vercel.app",
+]
+
+// Add production URL if specified
+if (process.env.PRODUCTION_URL) {
+  allowedOrigins.push(process.env.PRODUCTION_URL)
+}
+
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: process.env.NEXTAUTH_URL || "http://localhost:3000",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) return callback(null, true)
+      
+      // Check if origin matches allowed patterns
+      const isAllowed = allowedOrigins.some(allowed => {
+        if (allowed.includes("*")) {
+          // Handle wildcard patterns like https://*.vercel.app
+          const pattern = allowed.replace(/\*/g, ".*")
+          return new RegExp(`^${pattern}$`).test(origin)
+        }
+        return allowed === origin
+      })
+      
+      if (isAllowed) {
+        callback(null, true)
+      } else {
+        callback(new Error("Not allowed by CORS"))
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },

@@ -40,3 +40,6 @@ next-env.d.ts
 
 # Kiro IDE
 .kiro/
+
+# Deployment documentation (keep private)
+DEPLOYMENT.md
